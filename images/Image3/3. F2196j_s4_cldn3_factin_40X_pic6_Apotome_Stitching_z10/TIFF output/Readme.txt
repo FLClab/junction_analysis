@@ -1,0 +1,2 @@
+Problème avec ces données. L'ancien logiciel ou il fallait soustraire 32 pixels des coordonnées du crop à été utilisé un peu ensuite le nouveau logiciel à été utilisé pour continuer 
+l'annotation. Certe la majorité des annotations a été fait avec le nouveau logiciel mais on ne sait pas à partir de quel moment l'annotation à été continué avec le nouveau logiciel.
