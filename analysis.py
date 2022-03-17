@@ -6,7 +6,8 @@ import ast
 import glob
 from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
-from sklearn.cluster import KMeans
+from sklearn.cluster import KMeans, SpectralClustering
+from sklearn.impute import KNNImputer
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from umap import UMAP
 from skimage import io
@@ -65,13 +66,24 @@ def filter_points(points, coords, images, structures):
 
     temp = np.sum(temp[:, 0:2], axis=1)
 
-    indices = temp < 1
+    indices = temp < 2
     out_points = points[indices, :]
     out_coords = coords[indices]
     out_images = images[indices]
     out_structures = structures[indices]
 
     return out_points, out_coords, out_images, out_structures
+
+def impute_missing_labels(points):
+    """
+    Use KNN to estimate missing labels
+    :param point:
+    :return:
+    """
+    imputer = KNNImputer(missing_values=0.5, weights='distance', n_neighbors=2)
+    X = imputer.fit_transform(points)
+
+    return X
 
 def filter_structures_only(points, coords, images, structures):
     """
@@ -131,18 +143,21 @@ def scatter_labels(labels, legend, label_names=('Ruffles Qty', 'Ruffles Size', '
             plt.legend()
             plt.show()
 
-def label_clustering(labels, seed=105, n_clusters=7):
+def label_clustering(features, seed=105, n_clusters=7, method='kmeans'):
     """
     Cluster labels
     :param labels_list:
     :param seed:
     :return:
     """
-    knn = KMeans(n_clusters=n_clusters, random_state=seed)
+    if method == 'kmeans':
+        knn = KMeans(n_clusters=n_clusters, random_state=seed)
+    elif method == 'spectral':
+        knn = SpectralClustering(n_clusters=n_clusters, random_state=seed)
 
-    knn_labels = knn.fit_predict(labels).astype('int').ravel()
+    knn_labels = knn.fit_predict(features).astype('int').ravel()
 
-    return labels, knn_labels, knn
+    return features, knn_labels, knn
 
 def load_image(image_name):
     """
@@ -285,17 +300,18 @@ def plot_bars(counts, title):
     # Continuous - Fragmented
     # Sharp - Diffuse
 
-    features = ['Class 1', 'Class 2', 'Class 3', 'Class 4']
+    features = [1,2,3,4]
     classes = ['< 0.5', '= 0.5', '> 0.5']
+    plt.figure(figsize=(2,2))
 
     for c in range(3):
         offset = 0.20*(c-1)
         x = np.array([1,2,3,4])+offset
-        plt.bar(x,counts[:,c], width=0.20, label=classes[c])
+        plt.bar(x,counts[:,c], width=0.20, label=classes[c], edgecolor='black', linewidth='1.0')
 
     plt.xticks((1,2,3,4), features)
     plt.ylabel('Number of crops')
-    plt.xlabel('Feature')
+    plt.xlabel('Class')
     plt.title(title)
     plt.legend()
     plt.savefig(f'bars_{title}.pdf', bbox_inches='tight', dpi=450)
@@ -360,11 +376,11 @@ if __name__== '__main__':
     feature_names = ['Class 1', 'Class 2', 'Class 3', 'Class 4']
 
     features_list, coords_list, images_list, structures_list = [], [], [], []
-    for p in paths:
-        features, coords, images, structures = patch_list_to_points(p, filter=False, structures=(1,2))
+    for i, p in enumerate(paths):
+        features, coords, images, structures = patch_list_to_points(p, filter=False, structures=(1,))
 
         class_counts = count_classes(classify_by_values(features[structures == 1]))
-        plot_bars(class_counts, p)
+        plot_bars(class_counts, f'Image {i+1}')
 
         features_list.append(features)
         coords_list.append(coords)
@@ -372,6 +388,7 @@ if __name__== '__main__':
         structures_list.append(structures)
 
     features, coords, images, structures = combine_labels(features_list, coords_list, images_list, structures_list)
+    #features[:, 0:2] = impute_missing_labels(features[:, 0:2])
 
     # Show where ambiguous vs structure
     y = structures
@@ -406,7 +423,7 @@ if __name__== '__main__':
 
     # Clustering and UMAP
     n_clusters = 7
-    X, y, knn_model = label_clustering(features, n_clusters=n_clusters)
+    X, y, knn_model = label_clustering(features, n_clusters=n_clusters, method='kmeans')
     quantify_cluster_proportions(y, images)
 
     for img_name in np.unique(images):
@@ -420,7 +437,3 @@ if __name__== '__main__':
         plt.close()
     umap_clusters(X, y, method='UMAP')
     quantify_clusters(X, y)
-
-
-    #labels = combine_labels(labels)
-    #scatter_labels(labels, paths)
