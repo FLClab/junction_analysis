@@ -12,6 +12,8 @@ from umap import UMAP
 from skimage import io
 from itertools import product
 
+DEFAULT_COLORS = ('#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf')
+
 def load_data():
     """
     Load the results .csv file as pandas array
@@ -21,7 +23,7 @@ def load_data():
     return data
 
 
-def patch_list_to_points(path):
+def patch_list_to_points(path, filter=False, structures=(1,)):
     """
     Extract all annotation lists from patchlist as a [n, 4] numpy array
     :param path: path to patchlist
@@ -33,35 +35,64 @@ def patch_list_to_points(path):
     all_labels = []
     images = []
     coords = []
+    all_structures = []
     for row in liste:
-        if int(row[4]) not in (1,2):
+        if int(row[4]) not in structures:
             continue
         all_labels.append(ast.literal_eval(row[5]))
         img_name = row[0].split("\\")[-1]
         images.append(img_name)
         coords.append([int(row[1]), int(row[2])])
+        all_structures.append(int(row[4]))
 
     all_labels = np.array(all_labels)
     coords = np.array(coords)
+    images = np.array(images)
+    all_structures = np.array(all_structures)
 
-    return all_labels, coords, images
+    if filter:
+        all_labels, coords, images, all_structures = filter_points(all_labels, coords, images, all_structures)
 
-def filter_points(points):
+    return all_labels, coords, images, all_structures
+
+def filter_points(points, coords, images, structures):
     """
-    Filter points to remove those with too many 0.5s
-    :param points:
-    :return:
+    Filters out any point with labels equal to 0.5
+    :param points: array of shape (N, 4) of points with 4 features
+    :return: filtered array
     """
     temp = points[:] == 0.5
 
-    temp = np.sum(temp, axis=1)
+    temp = np.sum(temp[:, 0:2], axis=1)
 
-    indices = temp < 2
+    indices = temp < 1
     out_points = points[indices, :]
-    print(points.shape, out_points.shape)
-    return out_points, indices
+    out_coords = coords[indices]
+    out_images = images[indices]
+    out_structures = structures[indices]
 
-def combine_labels(label_list, coords_list, images_list):
+    return out_points, out_coords, out_images, out_structures
+
+def filter_structures_only(points, coords, images, structures):
+    """
+    Only keep points with strcutures == 1
+    :param points:
+    :param coords:
+    :param images:
+    :param structures:
+    :return:
+    """
+    indices = structures == 1
+
+    out_points = points[indices, :]
+    out_coords = coords[indices]
+    out_images = images[indices]
+    out_structures = structures[indices]
+
+    return out_points, out_coords, out_images, out_structures
+
+
+def combine_labels(label_list, coords_list, images_list, structures_list):
     """
     Concatenate labels from a list of extracter patchlists
     :param label_list:
@@ -70,11 +101,9 @@ def combine_labels(label_list, coords_list, images_list):
     labels = np.concatenate(label_list, axis=0)
     coords = np.concatenate(coords_list, axis=0)
     images = np.concatenate(images_list)
+    structures = np.concatenate(structures_list)
 
-    #labels, indices = filter_points(labels)
-    #coords = coords[indices]
-    #images = images[indices]
-    return labels, coords, images
+    return labels, coords, images, structures
 
 
 def scatter_labels(labels, legend, label_names=('Ruffles Qty', 'Ruffles Size', 'Fragmentation', 'Diffusion')):
@@ -104,7 +133,7 @@ def scatter_labels(labels, legend, label_names=('Ruffles Qty', 'Ruffles Size', '
 
 def label_clustering(labels, seed=105, n_clusters=7):
     """
-    Cluster labels and visualize
+    Cluster labels
     :param labels_list:
     :param seed:
     :return:
@@ -136,27 +165,35 @@ def load_image(image_name):
     return image
 
 
-def localize_clusters(image, coords, labels, size=64):
+def localize_clusters(image, coords, labels, size=64, n_examples=0, im_name='', colors=DEFAULT_COLORS):
     """
     Localize the crops of each cluster in the original image
     :param image: original image
     :param coords: np array of coordinates
     :param labels: np array of classes
     :param size: Size of the crops
+    :param n_examples: Number of examples of each class to extract
     :return:
     """
-    colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf']
 
     ax = plt.subplot()
+    ax.axis('off')
     ax.imshow(image)
 
+    counts = [0 for _ in range(7)]
     for (y,x), c in zip(coords, labels):
         rect = patches.Rectangle((y,x), size, size, alpha=0.62, facecolor=colors[c], edgecolor='white', linewidth=0.33)
         ax.add_patch(rect)
 
+        if np.random.random() < 0.25 and n_examples > 0:
+            if counts[c] < n_examples:
+                counts[c] += 1
+                crop = image[x:x+size, y:y+size, 0]
+                io.imsave(f'crops/class_{c}-crop_{counts[c]}_{im_name}.tif', crop)
+
     return ax
 
-def umap_clusters(X, y, seed=105):
+def umap_clusters(X, y, method='UMAP', seed=105):
     """
     Generate the UMAP visualization of the clustering
     :param X: numpy array of features
@@ -164,8 +201,13 @@ def umap_clusters(X, y, seed=105):
     :param seed: random state
     :return:
     """
-    #pca = TSNE(n_components=2, perplexity=30)
-    umap = UMAP(n_components=2, random_state=seed)
+    if method == 'UMAP':
+        umap = UMAP(n_components=2, random_state=seed)
+    elif method == 'TSNE':
+        umap = TSNE(n_components=2, perplexity=30, random_state=seed)
+    elif method == 'PCA':
+        umap = PCA(n_components=2, random_state=seed)
+
     umap_data = umap.fit_transform(X)
 
     for l in np.unique(y):
@@ -175,8 +217,8 @@ def umap_clusters(X, y, seed=105):
         #plt.xlabel(label_names[i])
         #plt.ylabel(label_names[j])
     plt.legend(title='Cluster index')
-    plt.title('UMAP Visualization of K-Means Clustering')
-    plt.savefig('umap.png', bbox_inches='tight', dpi=450)
+    plt.title(f'{method} Visualization of K-Means Clustering')
+    plt.savefig(f'{method}.pdf', bbox_inches='tight', dpi=450)
     plt.close()
 
 def quantify_clusters(X, y):
@@ -198,48 +240,17 @@ def quantify_clusters(X, y):
     ax = plt.subplot()
     mat = ax.matshow(cluster_array)
     ax.set_xticks([0,1,2,3])
-    ax.set_xticklabels(['Ruffles Qty', 'Ruffles Size', 'Fragmentation', 'Diffusion'], rotation=45)
+    ax.set_xticklabels(['Class 1', 'Class 2', 'Class 3', 'Class 4'], rotation=45)
 
     divider = make_axes_locatable(ax)
     cax = divider.append_axes("right", size="5%", pad=0.05)
     plt.colorbar(mat, cax=cax)
-    plt.savefig('codebar.png', bbox_inches='tight', dpi=450)
+    plt.savefig('codebar.pdf', bbox_inches='tight', dpi=450)
     plt.show()
-
-def quantify_stuff():
-    """
-    Just count how many of each class there is and do a lil bar graph
-    """
-
-    # Linear - Lots of Ruffles
-    # Small ruffles - Big ruffles
-    # Continuous - Fragmented
-    # Sharp - Diffuse
-
-    features = ['Ruffles Qty', 'Ruffles Size', 'Fragmentation', 'Diffusion']
-    classes = ['< 0.5', '= 0.5', '> 0.5']
-
-    data = load_data()
-
-    for i, row in data.iterrows():
-        classifications = np.array(ast.literal_eval(row[4]))
-
-        for c in range(3):
-            offset = 0.20*(c-1)
-            x = np.array([1,2,3,4])+offset
-            plt.bar(x,classifications[:,c], width=0.20, label=classes[c])
-
-        plt.xticks((1,2,3,4), features)
-        plt.ylabel('Number of crops')
-        plt.xlabel('Feature')
-        plt.title(f'Image {i+1}')
-        plt.legend()
-        plt.savefig(f'bars_image_{i+1}.png', bbox_inches='tight', dpi=450)
-        plt.close()
 
 def classify_by_values(X):
     """
-    Transform values to classes (<
+    Transform values to classes
     :param X:
     :return:
     """
@@ -250,24 +261,136 @@ def classify_by_values(X):
 
     return out_X.astype('uint8')
 
-if __name__== '__main__':
-    paths = ('patchlist1_32.txt', 'patchlist2.txt', 'patchlist3.txt')
-    #paths = ('patchlist1_32.txt',)
-    feature_names = ['Ruffles_Qty', 'Ruffles_Size', 'Fragmentation', 'Diffusion']
 
-    features_list, coords_list, images_list = [], [], []
+def count_classes(labels):
+    """
+    Count the amount of each class for plottin'
+    :param X:
+    :return:
+    """
+    counts = [[], [], []]
+    for c in (0,1,2):
+        counts[c] = (list(np.sum(labels == c, axis=0)))
+
+    counts = np.array(counts).T
+
+    return np.array(counts)
+
+def plot_bars(counts, title):
+    """
+    Just count how many of each class there is and do a lil bar graph
+    """
+    # Linear - Lots of Ruffles
+    # Small ruffles - Big ruffles
+    # Continuous - Fragmented
+    # Sharp - Diffuse
+
+    features = ['Class 1', 'Class 2', 'Class 3', 'Class 4']
+    classes = ['< 0.5', '= 0.5', '> 0.5']
+
+    for c in range(3):
+        offset = 0.20*(c-1)
+        x = np.array([1,2,3,4])+offset
+        plt.bar(x,counts[:,c], width=0.20, label=classes[c])
+
+    plt.xticks((1,2,3,4), features)
+    plt.ylabel('Number of crops')
+    plt.xlabel('Feature')
+    plt.title(title)
+    plt.legend()
+    plt.savefig(f'bars_{title}.pdf', bbox_inches='tight', dpi=450)
+    plt.close()
+
+def plot_feature_distribution(features):
+    """
+    Plot a histogram of the distribution of features' values
+    :param features:
+    :return:
+    """
+
+    fig, axes = plt.subplots(4,1,sharey='all' ,sharex='all')
+    for f in range(features.shape[1]):
+        axes[f].hist(features[:,f], bins=np.arange(0,1,0.05), edgecolor='black', linewidth=1.0)
+        #axes[f].set_ylim(0,160)
+    plt.xticks(np.arange(0,1,0.1))
+    #plt.title(f'Class {f+1}')
+    plt.xlabel('Feature value')
+    plt.ylabel('Number of crops')
+    #plt.show()
+    plt.savefig(f'hist_features.pdf', bbox_inches='tight', dpi=450)
+    plt.close()
+
+def quantify_cluster_proportions(classes, images):
+    """
+    Quantify the amount of crops in each cluster for every image
+    :param y: classes
+    :param images: image names
+    :return:
+    """
+
+    all_images = np.unique(images)
+    all_classes = np.unique(classes)
+
+    for i, img in enumerate(all_images):
+        plt.figure(figsize=(2, 2))
+        counts = np.array([0 for _ in all_classes])
+        y = classes[images == img]
+
+        for c in all_classes:
+            counts[c] += np.sum(y == c)
+
+        plt.bar(all_classes, counts/len(y), color=DEFAULT_COLORS, edgecolor='black', linewidth=1.0)
+        plt.title(f'Image {i+1}')
+        plt.ylim(0,0.5)
+        plt.xlabel('Cluster')
+        plt.ylabel('Proportion of crops')
+        plt.xticks(all_classes, all_classes)
+        #plt.show()
+        plt.savefig(f'n_classes_{img}.pdf', bbox_inches='tight', dpi=450)
+        plt.close()
+
+
+
+
+if __name__== '__main__':
+    np.random.seed(105)
+
+    paths = ('patchlist1_32.txt', 'patchlist2.txt', 'patchlist3_ancienLog_32_nouveauLog.txt', 'patchlist4.txt')
+    #paths = ('patchlist1_32.txt', 'patchlist2.txt', 'patchlist4.txt')
+    feature_names = ['Class 1', 'Class 2', 'Class 3', 'Class 4']
+
+    features_list, coords_list, images_list, structures_list = [], [], [], []
     for p in paths:
-        features, coords, images = patch_list_to_points(p)
+        features, coords, images, structures = patch_list_to_points(p, filter=False, structures=(1,2))
+
+        class_counts = count_classes(classify_by_values(features[structures == 1]))
+        plot_bars(class_counts, p)
+
         features_list.append(features)
         coords_list.append(coords)
         images_list.append(images)
+        structures_list.append(structures)
 
-    features, coords, images = combine_labels(features_list, coords_list, images_list)
+    features, coords, images, structures = combine_labels(features_list, coords_list, images_list, structures_list)
+
+    # Show where ambiguous vs structure
+    y = structures
+    for img_name in np.unique(images):
+        im_y = y[images == img_name]
+        im_coords = coords[images == img_name]
+
+        image = load_image(img_name)
+        localize_clusters(image, im_coords, im_y, colors=['black', 'cyan', 'red'])
+        plt.title('Structures')
+        plt.savefig(f'structures_{img_name[:-4]}.pdf', bbox_inches='tight', dpi=450)
+        plt.close()
+
     # Basic classification
+    features, coords, images, structures = filter_points(features, coords, images, structures)
+    plot_feature_distribution(features)
     X = features
     class_X = classify_by_values(X)
 
-    quantify_stuff()
     for c in range(4):
         y = class_X[:, c]
         for img_name in np.unique(images):
@@ -277,24 +400,27 @@ if __name__== '__main__':
             image = load_image(img_name)
             localize_clusters(image, im_coords, im_y)
             plt.title(feature_names[c])
-            plt.savefig(f'{feature_names[c]}_{img_name[:-4]}.png', bbox_inches='tight', dpi=450)
+            plt.savefig(f'{feature_names[c]}_{img_name[:-4]}.pdf', bbox_inches='tight', dpi=450)
             plt.close()
 
 
     # Clustering and UMAP
     n_clusters = 7
     X, y, knn_model = label_clustering(features, n_clusters=n_clusters)
+    quantify_cluster_proportions(y, images)
+
     for img_name in np.unique(images):
         im_y = y[images == img_name]
         im_coords = coords[images == img_name]
 
         image = load_image(img_name)
-        localize_clusters(image, im_coords, im_y)
+        localize_clusters(image, im_coords, im_y, n_examples=5, im_name=img_name)
         plt.title('Clustering Classes')
-        plt.savefig(f'clustering_{img_name[:-4]}.png', bbox_inches='tight', dpi=450)
+        plt.savefig(f'clustering_{img_name[:-4]}.pdf', bbox_inches='tight', dpi=450)
         plt.close()
-    umap_clusters(X, y)
-
+    umap_clusters(X, y, method='UMAP')
     quantify_clusters(X, y)
+
+
     #labels = combine_labels(labels)
     #scatter_labels(labels, paths)
