@@ -196,14 +196,14 @@ def localize_clusters(image, coords, labels, size=64, n_examples=0, im_name='', 
     ax.imshow(image)
 
     counts = [0 for _ in range(7)]
-    for (y,x), c in zip(coords, labels):
-        rect = patches.Rectangle((y,x), size, size, alpha=0.62, facecolor=colors[c], edgecolor='white', linewidth=0.33)
+    for (x,y), c in zip(coords, labels):
+        rect = patches.Rectangle((x,y), size, size, alpha=0.62, facecolor=colors[c], edgecolor='white', linewidth=0.33)
         ax.add_patch(rect)
 
         if np.random.random() < 0.25 and n_examples > 0:
             if counts[c] < n_examples:
                 counts[c] += 1
-                crop = image[x:x+size, y:y+size, 0]
+                crop = image[y:y+size, x:x+size, 0]
                 io.imsave(f'crops/class_{c}-crop_{counts[c]}_{im_name}.tif', crop)
 
     return ax

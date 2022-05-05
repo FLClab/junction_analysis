@@ -1,0 +1,5 @@
+Problème: Cannal 0 et 1 avaient été inversé dans le dossier "Annotation 5_(64x64pixel - edges)_2022.03.29.zip" fourni par Ellen. Cela à été corrigé dans le dossier "image5.zip". 
+Il y a deux images presque pareil : "F2178j_cldn3[green]_factin[red]_40X_pic7_MIP.tif" qui est une image obtenu par projection "maximum intensity projection"(chaque pixel à la valeur 
+maximale parmi tous les slices de l'image) et "F2178j_cldn3[green]_factin[red]_40X_pic7_z7.tif" qui représent un slice de l'image. 
+Nous avons choisir d'utiliser "F2178j_cldn3[green]_factin[red]_40X_pic7_MIP.tif" parce qu'il est plus clair que "F2178j_cldn3[green]_factin[red]_40X_pic7_z7.tif". Les annotations
+correspondants à "F2178j_cldn3[green]_factin[red]_40X_pic7_z7.tif" ont été supprimé du fichier initial "patchlist_initial" pour créer le fichier "patchlist_use" (fichié utilisé).

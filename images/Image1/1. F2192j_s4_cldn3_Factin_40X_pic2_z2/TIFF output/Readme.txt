@@ -1,2 +1,0 @@
-Il y avait une petite erreur dans le code de crop ou 32 pixel on été ajouté (le code à été modifié donc pas de problème pour les autres fichiers envoyé par Ellen). On a écrit un petit 
-code qui soustrait 32 px des coordonnées des crops. Donc au lieu d'utiliser le file "patchlist1.txt", utilisé plutôt le file "patchlist1_32.txt".
