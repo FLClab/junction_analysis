@@ -1,0 +1,1 @@
+Values for classes 0 and 1 (ruffles) are set to 0.0 when ambiguous
