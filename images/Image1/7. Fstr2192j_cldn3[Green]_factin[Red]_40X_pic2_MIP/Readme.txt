@@ -1,1 +1,0 @@
-Image 1 croppée puis réannotée en MIP
